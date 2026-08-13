@@ -108,16 +108,20 @@ async function getAuth(db, request) {
 
 const canEdit = (auth, pageId) => auth.isAdmin || auth.pages.includes(pageId);
 
-// Which permission page-id guards each table
+// Which permission scope guards each table. Device-scoped tables (devices, parts,
+// device_info_records) all share the single "device-<id>" scope, so granting an
+// editor access to one device covers its own record, its parts, and its info table
+// — never every device at once.
 function pageIdForTable(table, body, query) {
   switch (table) {
     case 'pcr_devices': return 'pcr-info';
     case 'bilimeter_devices': return 'bilimeter-info';
     case 'rotor_gene_parts': return 'rotor-gene-info';
     case 'hamilton_parts': return 'hamilton-info';
-    case 'device_info_records': return 'device-info-' + (body?.device_id || query?.device_id || '');
+    case 'device_info_records': return 'device-' + (body?.device_id || query?.device_id || '');
     case 'guide_pages': case 'guide_blocks': return 'guides';
-    case 'devices': case 'parts': return 'devices';
+    case 'parts': return 'device-' + (body?.device_id || query?.device_id || '');
+    case 'devices': return 'device-' + (query?.id || '');
     default: return table;
   }
 }
@@ -208,11 +212,18 @@ async function handleApi(request, env) {
   const auth = await getAuth(db, request);
   const body = (method === 'POST' || method === 'PUT') ? await request.json() : null;
   const queryParams = Object.fromEntries(url.searchParams);
-  if (resource === 'device_info_records' && id && !body?.device_id) {
-    const existing = await db.prepare('SELECT device_id FROM device_info_records WHERE id = ?').bind(id).first();
+  if ((resource === 'device_info_records' || resource === 'parts') && id && !body?.device_id) {
+    const existing = await db.prepare(`SELECT device_id FROM ${resource} WHERE id = ?`).bind(id).first();
     if (existing) queryParams.device_id = existing.device_id;
   }
+  if (resource === 'devices' && id) queryParams.id = id;
   const pageId = pageIdForTable(resource, body, queryParams);
+
+  // Creating a brand-new device has no existing device to scope a permission to,
+  // so it's an admin-only action; editors can only manage devices they're granted.
+  if (resource === 'devices' && method === 'POST' && !auth.isAdmin) {
+    return json({ error: 'forbidden' }, 403);
+  }
 
   if (resource === 'page_permissions') {
     if (!auth.isAdmin) return json({ error: 'forbidden' }, 403);
@@ -239,6 +250,9 @@ async function handleApi(request, env) {
   }
 
   if (method === 'DELETE' && id) {
+    // Deleting the device record itself (not its parts) stays admin-only — an
+    // editor granted a single device shouldn't be able to remove it from the system.
+    if (resource === 'devices' && !auth.isAdmin) return json({ error: 'forbidden' }, 403);
     await db.prepare(`DELETE FROM ${resource} WHERE id = ?`).bind(id).run();
     if (resource === 'guide_pages') {
       await db.prepare('DELETE FROM guide_blocks WHERE page_id = ?').bind(id).run();

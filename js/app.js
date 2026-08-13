@@ -27,7 +27,7 @@ const ICONS = {
   back: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
   link: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
   arrowLeft: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>',
-  guide: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
+  guide: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
 };
 
 // ===== Global state =====
@@ -89,7 +89,11 @@ async function route() {
   if (!state.me) {
     try { state.me = await API.me(); } catch { state.me = { email: '', isAdmin: false, pages: [] }; }
     const hu = document.getElementById('header-user');
-    if (hu && state.me.email && state.me.email !== 'dev@local') hu.textContent = state.me.email;
+    if (hu) {
+      const emailHtml = state.me.email && state.me.email !== 'dev@local' ? esc(state.me.email) : '';
+      const linkHtml = state.me.isAdmin ? `<a href="/user-management" data-link class="header-admin-link">${ICONS.users} ניהול משתמשים</a>` : '';
+      hu.innerHTML = [linkHtml, emailHtml].filter(Boolean).join('<br>');
+    }
   }
   const path = location.pathname;
   window.scrollTo(0, 0);
@@ -103,6 +107,7 @@ async function route() {
     if (path === '/rotor-gene-info') return await renderRotorGeneInfo();
     if (path === '/hamilton-info') return await renderHamiltonInfo();
     if ((m = path.match(/^\/guide-viewer\/([\w-]+)$/))) return await renderGuide(m[1]);
+    if (path === '/user-management') return await renderUserManagement();
     $app.innerHTML = `<div class="empty-state"><div class="big">הדף לא נמצא</div><a href="/" data-link class="btn btn-primary" style="margin-top:12px">חזרה לראשי</a></div>`;
   } catch (err) {
     $app.innerHTML = `<div class="empty-state"><div class="big">שגיאה בטעינת הדף</div><div>${esc(err.message)}</div></div>`;
@@ -118,8 +123,16 @@ async function renderHome() {
   const counts = {};
   parts.forEach(p => { counts[p.device_id] = (counts[p.device_id] || 0) + 1; });
 
+  // A root guide page can be linked to one device (e.g. "PM" → Hamilton NGS Star);
+  // that renders as a button on the device's own card, not a separate tile.
+  const guideByDevice = {};
+  guidePages
+    .filter(g => g.linked_device_id && g.button_label && g.is_published)
+    .forEach(g => { guideByDevice[g.linked_device_id] = g; });
+
   const deviceCard = (d) => {
     const infoRoute = d.info_route || `/device-info/${d.id}`;
+    const guide = guideByDevice[d.id];
     return `
     <div style="position:relative">
       <a class="info-btn" href="${infoRoute}" data-link>${ICONS.info} INFO</a>
@@ -140,6 +153,7 @@ async function renderHome() {
           </div>
         </div>
       </a>
+      ${guide ? `<a class="guide-btn" href="/guide-viewer/${guide.id}" data-link>${ICONS.guide} ${esc(guide.button_label)}</a>` : ''}
     </div>`;
   };
 
@@ -160,26 +174,6 @@ async function renderHome() {
       </a>
     </div>`;
 
-  const guideCard = (g) => `
-    <a class="device-card guide-card" href="/guide-viewer/${g.id}" data-link>
-      <div class="img-wrap guide-icon">${ICONS.guide}</div>
-      <div class="card-body">
-        <div>
-          <h3>${esc(g.button_label)}</h3>
-          <div class="card-sub">מדריך תחזוקה</div>
-        </div>
-        <div class="card-footer">
-          <div class="chips"><span class="chip chip-outline">מדריך</span></div>
-        </div>
-      </div>
-    </a>`;
-
-  const guideCards = guidePages
-    .filter(g => !g.parent_id && g.button_label && g.is_published)
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map(guideCard)
-    .join('');
-
   $app.innerHTML = `
     <div class="page-title-row">
       <h2 class="page-title">רשימת מכשירים</h2>
@@ -191,7 +185,6 @@ async function renderHome() {
     <div class="devices-grid" id="devices-grid">
       ${pcrCard}
       ${devices.map(deviceCard).join('')}
-      ${guideCards}
     </div>
   `;
 
@@ -301,7 +294,7 @@ async function renderTable(cfg) {
       <div class="page-title-row">
         <h2 class="page-title">${esc(cfg.title)}</h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${state.me.isAdmin ? `<button class="btn btn-outline" id="btn-users">${ICONS.users} ניהול משתמשים</button>` : ''}
+          ${state.me.isAdmin ? `<a href="/user-management" data-link class="btn btn-outline">${ICONS.users} ניהול משתמשים</a>` : ''}
           <button class="btn btn-outline" id="btn-export">${ICONS.download} יצא לאקסל</button>
           ${editable ? `<button class="btn btn-primary" id="btn-add">${ICONS.plus} הוסף שורה</button>` : ''}
         </div>
@@ -340,9 +333,6 @@ async function renderTable(cfg) {
       exportToExcel(`${cfg.exportName || cfg.table}.csv`, headers, dataRows);
     };
 
-    if (state.me.isAdmin) {
-      document.getElementById('btn-users').onclick = () => openUsersModal(cfg.pageId, cfg.title);
-    }
     if (editable) {
       document.getElementById('btn-add').onclick = () => openRowModal(null);
       $app.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
@@ -434,74 +424,114 @@ async function renderTable(cfg) {
   render();
 }
 
-// ===== User management (admins + per-page permissions) =====
-async function openUsersModal(pageId, pageTitle) {
-  const [perms, admins] = await Promise.all([
-    API.list('page_permissions', { page_id: pageId }),
+// ===== User management (central page: admins + per-scope editor grants) =====
+const SPECIAL_SCOPES = [
+  { id: 'pcr-info', label: 'PCR — טבלת מידע' },
+  { id: 'bilimeter-info', label: 'Bilimeter — טבלת מידע' },
+  { id: 'rotor-gene-info', label: 'Rotor-Gene Q — טבלת מידע' },
+  { id: 'hamilton-info', label: 'Hamilton NGS Star — טבלת מידע' },
+  { id: 'guides', label: 'מדריכים (PM)' },
+];
+
+async function renderUserManagement() {
+  if (!state.me.isAdmin) {
+    $app.innerHTML = `<div class="empty-state"><div class="big">הדף הזה מיועד למנהלי מערכת בלבד</div><a href="/" data-link class="btn btn-primary" style="margin-top:12px">חזרה לראשי</a></div>`;
+    return;
+  }
+  $app.innerHTML = '<div class="spinner"></div>';
+  const [admins, perms, devices] = await Promise.all([
     API._fetch('/api/admins'),
+    API.list('page_permissions'),
+    API.list('devices'),
   ]);
 
-  const modal = showModal(`
-    <h3>הרשאות עריכה — ${esc(pageTitle)}</h3>
-    <div class="form-field full"><label>הוסף מייל מורשה לעריכת דף זה</label>
-      <div style="display:flex;gap:6px">
-        <input type="email" id="perm-email" placeholder="כתובת אימייל" style="flex:1;border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:13.5px">
-        <button class="btn btn-primary btn-sm" id="perm-add">הוסף הרשאה</button>
-      </div>
-    </div>
-    <div id="perm-list" style="margin-top:10px">${perms.length ? '' : '<div class="muted" style="font-size:13px">אין משתמשים מורשים לדף זה עדיין</div>'}</div>
-    <hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">
-    <h3 style="font-size:15px">מנהלי מערכת (גישה מלאה)</h3>
-    <div class="form-field full">
-      <div style="display:flex;gap:6px">
-        <input type="email" id="admin-email" placeholder="כתובת אימייל" style="flex:1;border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:13.5px">
-        <button class="btn btn-primary btn-sm" id="admin-add">הוסף מנהל</button>
-      </div>
-    </div>
-    <div id="admin-list" style="margin-top:10px"></div>
-    <div class="modal-actions"><button class="btn" id="modal-close">סגור</button></div>
-  `);
+  const deviceScopes = devices.map(d => ({ id: `device-${d.id}`, label: d.name }));
+  const allScopes = [...deviceScopes, ...SPECIAL_SCOPES];
+  const scopeLabel = (scopeId) => (allScopes.find(s => s.id === scopeId) || {}).label || scopeId;
 
-  const rowHtml = (email, attr) => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(224,229,235,.5);font-size:13.5px">
-      <span style="direction:ltr">${esc(email)}</span>
-      <button class="btn btn-icon btn-danger" ${attr}>${ICONS.trash}</button>
-    </div>`;
+  const scopeOptions = `
+    <optgroup label="מכשירים">${deviceScopes.map(s => `<option value="${s.id}">${esc(s.label)}</option>`).join('')}</optgroup>
+    <optgroup label="דפים מיוחדים">${SPECIAL_SCOPES.map(s => `<option value="${s.id}">${esc(s.label)}</option>`).join('')}</optgroup>
+  `;
 
-  const drawPerms = (list) => {
-    modal.querySelector('#perm-list').innerHTML = list.length
-      ? list.map(p => rowHtml(p.email, `data-rmperm="${p.id}"`)).join('')
-      : '<div class="muted" style="font-size:13px">אין משתמשים מורשים לדף זה עדיין</div>';
-    modal.querySelectorAll('[data-rmperm]').forEach(b => b.onclick = async () => {
-      await API.remove('page_permissions', b.dataset.rmperm);
-      drawPerms(list.filter(p => p.id !== b.dataset.rmperm));
-    });
-  };
-  const drawAdmins = (list) => {
-    modal.querySelector('#admin-list').innerHTML = list.map(a => rowHtml(a.email, `data-rmadmin="${esc(a.email)}"`)).join('');
-    modal.querySelectorAll('[data-rmadmin]').forEach(b => b.onclick = async () => {
+  const render = () => {
+    // Group editor grants by scope so it reads as "who can edit what", not a flat list
+    const byScope = {};
+    perms.forEach(p => { (byScope[p.page_id] = byScope[p.page_id] || []).push(p); });
+    const scopeIds = Object.keys(byScope).sort((a, b) => scopeLabel(a).localeCompare(scopeLabel(b), 'he'));
+
+    $app.innerHTML = `
+      <div class="breadcrumb"><a href="/" data-link>ראשי</a> ${ICONS.back} <span>ניהול משתמשים</span></div>
+      <h2 class="page-title" style="margin-bottom:6px">ניהול משתמשים</h2>
+      <p class="muted" style="font-size:13.5px;margin-bottom:20px;max-width:640px">
+        שלוש רמות גישה: <b>מנהל מערכת</b> — גישה מלאה לעריכת הכול ולניהול הרשאות.
+        <b>עורך</b> — יכול לערוך רק את המכשיר/הדף הספציפי שהוקצה לו (לא את כל המכשירים).
+        <b>צופה</b> — כל מי שנכנס דרך Cloudflare Access ואינו ברשימות למטה: רואה הכול, לא יכול לערוך כלום. אין צורך להגדיר צופים — זה קורה אוטומטית.
+      </p>
+
+      <div class="table-card" style="padding:18px 20px;margin-bottom:18px">
+        <h3 style="font-size:15px;margin-bottom:12px">מנהלי מערכת</h3>
+        <div style="display:flex;gap:6px;max-width:420px;margin-bottom:12px">
+          <input type="email" id="admin-email" placeholder="כתובת אימייל" style="flex:1;border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:13.5px">
+          <button class="btn btn-primary btn-sm" id="admin-add">הוסף מנהל</button>
+        </div>
+        <div id="admin-list">${admins.length ? '' : '<div class="muted" style="font-size:13px">אין מנהלים רשומים</div>'}</div>
+      </div>
+
+      <div class="table-card" style="padding:18px 20px">
+        <h3 style="font-size:15px;margin-bottom:4px">הרשאות עריכה</h3>
+        <p class="muted" style="font-size:12.5px;margin-bottom:12px">בחר מכשיר ספציפי או דף מיוחד, והכנס את המייל של מי שרשאי לערוך רק אותו.</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+          <select id="perm-scope" style="border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:13.5px;min-width:220px">${scopeOptions}</select>
+          <input type="email" id="perm-email" placeholder="כתובת אימייל" style="flex:1;min-width:200px;border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:13.5px">
+          <button class="btn btn-primary btn-sm" id="perm-add">הוסף הרשאה</button>
+        </div>
+        <div id="perm-groups">${scopeIds.length ? '' : '<div class="muted" style="font-size:13px">אין הרשאות עריכה מוגדרות עדיין</div>'}</div>
+      </div>
+    `;
+
+    const rowHtml = (email, attr) => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(224,229,235,.5);font-size:13.5px">
+        <span style="direction:ltr">${esc(email)}</span>
+        <button class="btn btn-icon btn-danger" ${attr}>${ICONS.trash}</button>
+      </div>`;
+
+    document.getElementById('admin-list').innerHTML = admins.map(a => rowHtml(a.email, `data-rmadmin="${esc(a.email)}"`)).join('');
+    document.querySelectorAll('[data-rmadmin]').forEach(b => b.onclick = async () => {
       if (!confirm(`להסיר את ${b.dataset.rmadmin} ממנהלי המערכת?`)) return;
       await API._fetch(`/api/admins/${encodeURIComponent(b.dataset.rmadmin)}`, { method: 'DELETE' });
-      drawAdmins(list.filter(a => a.email !== b.dataset.rmadmin));
+      admins.splice(admins.findIndex(a => a.email === b.dataset.rmadmin), 1);
+      render();
     });
-  };
-  drawPerms(perms); drawAdmins(admins);
+    document.getElementById('admin-add').onclick = async () => {
+      const email = document.getElementById('admin-email').value.trim().toLowerCase();
+      if (!email) return;
+      await API._fetch('/api/admins', { method: 'POST', body: JSON.stringify({ email }) });
+      admins.push({ email }); render();
+    };
 
-  modal.querySelector('#perm-add').onclick = async () => {
-    const email = modal.querySelector('#perm-email').value.trim().toLowerCase();
-    if (!email) return;
-    const created = await API.create('page_permissions', { page_id: pageId, email });
-    perms.push(created); drawPerms(perms);
-    modal.querySelector('#perm-email').value = '';
+    document.getElementById('perm-groups').innerHTML = scopeIds.map(scopeId => `
+      <div style="margin-bottom:14px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px">${esc(scopeLabel(scopeId))}</div>
+        ${byScope[scopeId].map(p => rowHtml(p.email, `data-rmperm="${p.id}"`)).join('')}
+      </div>`).join('');
+    document.querySelectorAll('[data-rmperm]').forEach(b => b.onclick = async () => {
+      await API.remove('page_permissions', b.dataset.rmperm);
+      const idx = perms.findIndex(p => p.id === b.dataset.rmperm);
+      if (idx > -1) perms.splice(idx, 1);
+      render();
+    });
+    document.getElementById('perm-add').onclick = async () => {
+      const email = document.getElementById('perm-email').value.trim().toLowerCase();
+      const page_id = document.getElementById('perm-scope').value;
+      if (!email) { toast('יש למלא כתובת אימייל'); return; }
+      const created = await API.create('page_permissions', { page_id, email });
+      perms.push(created); render();
+      toast('ההרשאה נוספה');
+    };
   };
-  modal.querySelector('#admin-add').onclick = async () => {
-    const email = modal.querySelector('#admin-email').value.trim().toLowerCase();
-    if (!email) return;
-    await API._fetch('/api/admins', { method: 'POST', body: JSON.stringify({ email }) });
-    admins.push({ email }); drawAdmins(admins);
-    modal.querySelector('#admin-email').value = '';
-  };
-  modal.querySelector('#modal-close').onclick = closeModal;
+
+  render();
 }
 
 // ===== Info pages =====
