@@ -1,7 +1,7 @@
 # מערכת ניהול חלקי תחזוקה מונעת — כללית הנדסה רפואית
 
 העתק מלא ועצמאי של האפליקציה שנבנתה ב-base44 (clalit-part-pulse), ללא שום תלות ב-base44.
-רץ על Cloudflare Pages + Functions + D1, עם בקרת כניסה דרך Cloudflare Access.
+רץ כ-**Cloudflare Worker** אחד (סטטי + API מעל D1), עם בקרת כניסה דרך Cloudflare Access.
 
 ## מה יש באתר
 
@@ -11,66 +11,52 @@
 - **מדריכים (PM)** — דפי הדרכה היררכיים עם טקסט ותמונות, כולל עורך מובנה
 - **ניהול הרשאות** — מנהלי מערכת + הרשאות עריכה פר-דף לפי כתובת המייל שאיתה המשתמש נכנס
 
-## מבנה הפרויקט
+## מבנה הפרויקט וארכיטקטורה
 
 ```
-index.html, css/, js/, images/    האתר עצמו (HTML/CSS/JS — ללא build), בתיקיית הרוט
-functions/api/        ה-API (Cloudflare Pages Functions מעל D1)
-  [[path]].js         כל נקודות הקצה
-  seed-data.js        כל הנתונים שהועתקו מהאתר המקורי (נטען אוטומטית בפעם הראשונה)
-scripts/make-seed.js  ממיר את scrape/*.json ל-seed-data.js
-scrape/               הנתונים הגולמיים שנשאבו מ-base44 (גיבוי)
+index.html, css/, js/, images/   האתר עצמו (HTML/CSS/JS — ללא build), בתיקיית הרוט
+src/worker.js          נקודת הכניסה של ה-Worker: מגיש /api/* ומפנה כל השאר לקבצים הסטטיים
+src/seed-data.js        כל הנתונים שהועתקו מהאתר המקורי (נטען אוטומטית בפעם הראשונה)
+wrangler.jsonc          תצורת הפריסה — כולל את חיבור ה-D1 (binding בשם DB)
+scripts/make-seed.js    ממיר את scrape/*.json ל-src/seed-data.js
+scrape/                 הנתונים הגולמיים שנשאבו מ-base44 (גיבוי)
 ```
+
+**חשוב להבין:** הפרויקט הזה מחובר ב-Cloudflare כפרויקט **Workers** (נפרס עם `npx wrangler deploy` ישירות מ-GitHub, לא "Cloudflare Pages" הקלאסי). המשמעות: כל ה-routing — גם הגשת האתר הסטטי וגם ה-API — קורה בקובץ Worker אחד (`src/worker.js`), וכל ההגדרות (כולל חיבור ה-D1) מוגדרות בקובץ `wrangler.jsonc` שנמצא בריפו. **אין צורך להגדיר D1 binding ידנית בדשבורד** — זה קורה אוטומטית בכל פריסה, ישירות מהקובץ.
 
 בסיס הנתונים נוצר ומאוכלס **אוטומטית** בבקשת ה-API הראשונה — אין צורך להריץ SQL ידנית.
 
 ---
 
-# 🚀 הקמה ב-Cloudflare — שלב אחרי שלב
+# 🚀 הקמה ב-Cloudflare
 
-## שלב 1: חשבון Cloudflare
+## שלב 1: יצירת בסיס הנתונים (D1) — אם עוד לא קיים
 
-1. היכנס ל-https://dash.cloudflare.com (או פתח חשבון חינמי — התוכנית החינמית מספיקה לכל מה שכאן).
+1. בדשבורד של Cloudflare: **Storage & Databases → D1 SQL Database → Create Database**
+2. שם: `clalit-parts` → **Create**
+3. פתח את הבסיס נתונים שנוצר → לשונית **Overview** → העתק את ה-**Database ID** (UUID)
+4. ודא שב-`wrangler.jsonc` (בריפו) בשדה `database_id` מופיע בדיוק אותו UUID
 
-## שלב 2: יצירת בסיס הנתונים (D1)
+## שלב 2: חיבור הריפו כפרויקט Workers
 
-1. בתפריט הצד: **Storage & Databases → D1 SQL Database**
-2. לחץ **Create Database**
-3. שם: `clalit-parts` → **Create**
+1. בדשבורד: **Compute (Workers & Pages) → Create → Connect to Git** (או "Import a repository")
+2. בחר את **RLsite/clalit**
+3. Cloudflare יזהה את `wrangler.jsonc` בריפו ויציע את פקודות ה-build/deploy המתאימות (`npx wrangler deploy`) — אין צורך לשנות כלום
+4. **Save and Deploy**
 
-זהו. אין צורך להריץ סכמה — הטבלאות והנתונים נוצרים לבד בכניסה הראשונה לאתר.
+מהרגע הזה, **כל push לענף `main`** יפעיל אוטומטית build+deploy חדש (Workers Builds), וה-D1 binding יתחבר לבד מהקובץ — בלי מסכי Bindings ידניים.
 
-## שלב 3: חיבור הריפו ל-Cloudflare Pages
+## שלב 3: דומיין מותאם (אם רוצים)
 
-1. בתפריט הצד: **Compute (Workers & Pages) → Create → Pages → Connect to Git**
-2. התחבר לחשבון GitHub שלך ובחר את הריפו **RLsite/clalit**
-3. בהגדרות ה-Build:
-   - **Framework preset**: None
-   - **Build command**: (להשאיר ריק)
-   - **Build output directory**: `/` (שורש הריפו — להשאיר ריק או לרשום `/`)
-4. לחץ **Save and Deploy**
+בפרויקט: **Settings → Domains & Routes → Add** — אפשר להוסיף דומיין מותאם אישית (למשל `clalit.rlapp.net`) בנוסף לכתובת ה-`*.workers.dev` הדיפולטיבית.
 
-## שלב 4: חיבור בסיס הנתונים לאתר
-
-1. אחרי שה-Deploy הראשון מסתיים: **הפרויקט → Settings → Bindings → Add**
-2. בחר **D1 Database**
-3. **Variable name**: `DB` (בדיוק ככה, באותיות גדולות)
-4. **D1 database**: בחר `clalit-parts`
-5. שמור, ואז **Deployments → ⋯ → Retry deployment** (כדי שה-binding ייכנס לתוקף)
-
-האתר עכשיו חי בכתובת `https://clalit-part-pulse.pages.dev` (או השם שבחרת).
-היכנס אליו פעם אחת — הנתונים ייטענו אוטומטית מהגיבוי.
-
-## שלב 5: בקרת כניסה — רק משתמשים מורשים (Cloudflare Access)
+## שלב 4: בקרת כניסה — רק משתמשים מורשים (Cloudflare Access)
 
 1. בתפריט הצד: **Zero Trust** (בפעם הראשונה יבקש לבחור שם צוות — כל שם שתרצה, זה חינם עד 50 משתמשים)
 2. **Access → Applications → Add an application → Self-hosted**
 3. **Application name**: Clalit Parts
-4. תחת **Public hostname** לחץ Add:
-   - **Subdomain**: שם הפרויקט שלך (למשל `clalit-part-pulse`)
-   - **Domain**: `pages.dev`
-   - וגם שורה שנייה עם subdomain `*.clalit-part-pulse` (מכסה גם את כתובות ה-Preview)
-5. המשך ל-**Policies → Add a policy**:
+4. תחת **Public hostname** הוסף את הדומיין/כתובת ה-Worker שלך (למשל `clalit.rlapp.net`, וגם `*.workers.dev` הרלוונטי אם משתמשים בו)
+5. **Policies → Add a policy**:
    - **Policy name**: משתמשים מורשים
    - **Action**: Allow
    - תחת **Include** בחר **Emails** והכנס את רשימת המיילים המורשים
@@ -80,10 +66,7 @@ scrape/               הנתונים הגולמיים שנשאבו מ-base44 (ג
 
 מעכשיו כל מי שנכנס לאתר יתבקש להזדהות במייל, ורק מיילים מהרשימה ייכנסו.
 
-> חשוב: מומלץ גם **Workers & Pages → הפרויקט → Settings → General → Access policy → Enabled**
-> כדי שגם כתובות ה-Preview של כל deployment יהיו מוגנות.
-
-## שלב 6: הרשאות עריכה בתוך האתר
+## שלב 5: הרשאות עריכה בתוך האתר
 
 - שני מנהלי מערכת מוגדרים מראש: `clalit.rl@gmail.com` ו-`levy.harel@gmail.com`
 - מנהל רואה כפתור **"ניהול משתמשים"** בכל טבלה — שם מוסיפים:
@@ -96,10 +79,10 @@ scrape/               הנתונים הגולמיים שנשאבו מ-base44 (ג
 ## פיתוח מקומי
 
 ```bash
-npx wrangler pages dev .
+npx wrangler dev
 ```
 
-נפתח על http://localhost:8788 עם D1 מקומי (נוצר ומאוכלס אוטומטית).
+נפתח על http://localhost:8787 עם D1 מקומי (נוצר ומאוכלס אוטומטית).
 בסביבה מקומית אין Cloudflare Access ולכן אתה נחשב מנהל מערכת אוטומטית.
 
 ## עדכון נתוני הבסיס (seed)
@@ -110,4 +93,4 @@ npx wrangler pages dev .
 node scripts/make-seed.js
 ```
 
-הנתונים נטענים רק אם בסיס הנתונים ריק — נתונים קיימים לא נדרסים.
+הנתונים נטענים רק אם בסיס הנתונים ריק (מסומן ב-`meta.seeded`) — נתונים קיימים לא נדרסים.

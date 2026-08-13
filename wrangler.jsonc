@@ -1,0 +1,17 @@
+{
+  "name": "clalit",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-13",
+  "assets": {
+    "directory": "./",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "clalit-parts",
+      "database_id": "aeb4080d-3944-4e34-9e63-87c5078ea4f2"
+    }
+  ]
+}

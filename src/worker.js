@@ -1,5 +1,9 @@
-// REST API over Cloudflare D1 for the Clalit PM parts system.
-// Routes: /api/<table>, /api/<table>/<id>, /api/files, /api/files/<id>, /api/me, /api/setup
+// Cloudflare Worker for the Clalit PM parts system.
+// Serves the static SPA (via the ASSETS binding) and the REST API over D1 under /api/*.
+//
+// This project deploys via `npx wrangler deploy` (Workers Builds CI from GitHub), not
+// Cloudflare Pages — Pages' automatic `functions/` directory routing does not apply here,
+// so all routing (API vs. static assets) happens explicitly in this single entry point.
 import { SEED } from './seed-data.js';
 
 const TABLES = {
@@ -118,9 +122,9 @@ function pageIdForTable(table, body, query) {
   }
 }
 
-export async function onRequest({ request, env }) {
+async function handleApi(request, env) {
   const db = env.DB;
-  if (!db) return json({ error: 'D1 binding "DB" is missing — configure it in Cloudflare Pages settings' }, 500);
+  if (!db) return json({ error: 'D1 binding "DB" is missing — check the d1_databases block in wrangler.jsonc' }, 500);
 
   const url = new URL(request.url);
   const segments = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
@@ -245,3 +249,20 @@ export async function onRequest({ request, env }) {
 
   return json({ error: 'method not allowed' }, 405);
 }
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/')) {
+      try {
+        return await handleApi(request, env);
+      } catch (err) {
+        return json({ error: err.message || 'internal error' }, 500);
+      }
+    }
+    // Everything else is a static asset; unmatched paths fall back to index.html
+    // (single-page-application mode, configured in wrangler.jsonc) so client-side
+    // routes like /devices/:id or /hamilton-info render correctly on direct load.
+    return env.ASSETS.fetch(request);
+  },
+};

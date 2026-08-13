@@ -1,0 +1,11 @@
+src
+scripts
+scrape
+wrangler.jsonc
+.gitignore
+.assetsignore
+README.md
+node_modules
+.wrangler
+.git
+*.log
