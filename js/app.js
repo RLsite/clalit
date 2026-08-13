@@ -28,6 +28,7 @@ const ICONS = {
   link: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
   arrowLeft: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>',
   guide: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
+  book: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
 };
 
 // ===== Global state =====
@@ -108,6 +109,7 @@ async function route() {
     if (path === '/hamilton-info') return await renderHamiltonInfo();
     if ((m = path.match(/^\/guide-viewer\/([\w-]+)$/))) return await renderGuide(m[1]);
     if (path === '/user-management') return await renderUserManagement();
+    if (path === '/guide-management') return await renderGuideManagement();
     $app.innerHTML = `<div class="empty-state"><div class="big">הדף לא נמצא</div><a href="/" data-link class="btn btn-primary" style="margin-top:12px">חזרה לראשי</a></div>`;
   } catch (err) {
     $app.innerHTML = `<div class="empty-state"><div class="big">שגיאה בטעינת הדף</div><div>${esc(err.message)}</div></div>`;
@@ -182,6 +184,11 @@ async function renderHome() {
         <input type="text" class="search-input" id="device-search" placeholder="חיפוש...">
       </div>
     </div>
+    ${state.me.isAdmin ? `
+    <div class="home-admin-toolbar">
+      <button class="btn btn-primary" id="btn-new-device">${ICONS.plus} מכשיר חדש</button>
+      <a class="btn btn-teal" href="/guide-management" data-link>${ICONS.book} ניהול מדריכים</a>
+    </div>` : ''}
     <div class="devices-grid" id="devices-grid">
       ${pcrCard}
       ${devices.map(deviceCard).join('')}
@@ -196,6 +203,56 @@ async function renderHome() {
       wrap.style.display = !q || text.includes(q) ? '' : 'none';
     });
   });
+
+  if (state.me.isAdmin) {
+    document.getElementById('btn-new-device').onclick = () => openNewDeviceModal();
+  }
+}
+
+async function openNewDeviceModal() {
+  const catOptions = Object.entries(CAT_LABELS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+  showModal(`
+    <h3>מכשיר חדש</h3>
+    <div class="form-grid">
+      <div class="form-field full"><label>שם המכשיר (אנגלית) *</label><input type="text" id="d-name"></div>
+      <div class="form-field full"><label>שם בעברית</label><input type="text" id="d-name-he"></div>
+      <div class="form-field"><label>קטגוריה</label><select id="d-category">${catOptions}</select></div>
+      <div class="form-field"><label>קוד טכני</label><input type="text" id="d-tech-code"></div>
+      <div class="form-field full"><label>קישור חיצוני</label><input type="text" id="d-link"></div>
+      <div class="form-field full"><label>הערות</label><textarea id="d-notes"></textarea></div>
+      <div class="form-field full"><label>תמונה</label><input type="file" id="d-image" accept="image/*"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="modal-save">צור מכשיר</button>
+      <button class="btn" id="modal-cancel">ביטול</button>
+    </div>
+  `);
+  document.getElementById('modal-cancel').onclick = closeModal;
+  document.getElementById('modal-save').onclick = async () => {
+    const btn = document.getElementById('modal-save');
+    const name = document.getElementById('d-name').value.trim();
+    if (!name) { toast('יש למלא שם מכשיר'); return; }
+    btn.disabled = true; btn.textContent = 'יוצר...';
+    try {
+      const data = {
+        name,
+        name_he: document.getElementById('d-name-he').value.trim(),
+        category: document.getElementById('d-category').value,
+        tech_code: document.getElementById('d-tech-code').value.trim(),
+        external_link: document.getElementById('d-link').value.trim(),
+        notes: document.getElementById('d-notes').value.trim(),
+      };
+      const fileEl = document.getElementById('d-image');
+      if (fileEl.files && fileEl.files[0]) {
+        const up = await API.uploadFile(fileEl.files[0]);
+        data.image = up.url;
+      }
+      const created = await API.create('devices', data);
+      closeModal();
+      toast('המכשיר נוצר בהצלחה');
+      navigate(`/devices/${created.id}`);
+    } catch (err) { toast(err.message); btn.disabled = false; btn.textContent = 'צור מכשיר'; }
+  };
 }
 
 // ===== Device page =====
@@ -834,6 +891,121 @@ async function renderGuide(pageId) {
       closeModal(); renderGuide(pageId); toast('נשמר');
     };
   };
+}
+
+// ===== Guide management (central admin console for guide trees) =====
+async function renderGuideManagement() {
+  if (!state.me.isAdmin) {
+    $app.innerHTML = `<div class="empty-state"><div class="big">הדף הזה מיועד למנהלי מערכת בלבד</div><a href="/" data-link class="btn btn-primary" style="margin-top:12px">חזרה לראשי</a></div>`;
+    return;
+  }
+  $app.innerHTML = '<div class="spinner"></div>';
+  const [pages, devices] = await Promise.all([API.list('guide_pages'), API.list('devices')]);
+  const deviceName = (id) => (devices.find(d => d.id === id) || {}).name;
+  const childCount = (id) => pages.filter(p => p.parent_id === id).length;
+
+  const render = () => {
+    const roots = pages.filter(p => !p.parent_id).sort((a, b) => a.sort_order - b.sort_order);
+    $app.innerHTML = `
+      <div class="breadcrumb"><a href="/" data-link>ראשי</a> ${ICONS.back} <span>ניהול מדריכים</span></div>
+      <div class="page-title-row">
+        <h2 class="page-title">ניהול מדריכים</h2>
+        <button class="btn btn-primary" id="btn-new-guide">${ICONS.plus} מדריך חדש</button>
+      </div>
+      <p class="muted" style="font-size:13.5px;margin-bottom:16px;max-width:640px">
+        כל שורה כאן היא עץ מדריך עצמאי (כמו ה-PM של Hamilton). אפשר לקשר מדריך למכשיר ספציפי — אז יופיע עליו כפתור בדף הראשי — או להשאיר אותו ללא קישור ולפתוח אותו ישירות מכאן.
+      </p>
+      <div class="table-card">
+        <div class="table-scroll">
+          ${roots.length ? `
+          <table class="data-table">
+            <thead><tr><th>כותרת</th><th>תווית כפתור</th><th>מכשיר מקושר</th><th>תת-דפים</th><th>סטטוס</th><th>פעולות</th></tr></thead>
+            <tbody>
+              ${roots.map(p => `<tr>
+                <td>${esc(p.title)}</td>
+                <td>${p.button_label ? esc(p.button_label) : '<span class="empty-cell">—</span>'}</td>
+                <td>${p.linked_device_id ? esc(deviceName(p.linked_device_id) || p.linked_device_id) : '<span class="empty-cell">—</span>'}</td>
+                <td>${childCount(p.id)}</td>
+                <td>${p.is_published ? '<span class="chip chip-hematology">מפורסם</span>' : '<span class="chip chip-outline">טיוטה</span>'}</td>
+                <td><div class="row-actions">
+                  <a class="btn btn-sm btn-outline" href="/guide-viewer/${p.id}" data-link>פתח</a>
+                  <button class="btn btn-icon btn-outline" data-edit="${p.id}" title="עריכה">${ICONS.pencil}</button>
+                  <button class="btn btn-icon btn-danger" data-del="${p.id}" title="מחיקה">${ICONS.trash}</button>
+                </div></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>` : `
+          <div class="empty-state">
+            <div class="big">אין עדיין מדריכים</div>
+            <div>לחץ על "מדריך חדש" כדי ליצור את הראשון</div>
+          </div>`}
+        </div>
+      </div>
+    `;
+
+    document.getElementById('btn-new-guide').onclick = () => openGuideRootModal(null);
+    $app.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
+      openGuideRootModal(pages.find(p => p.id === b.dataset.edit));
+    });
+    $app.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+      const p = pages.find(x => x.id === b.dataset.del);
+      const kids = childCount(p.id);
+      const msg = kids
+        ? `למחוק את "${p.title}"? יש לו ${kids} תת-דפים שיהפכו לעצמאיים ולא יימחקו.`
+        : `למחוק את "${p.title}"?`;
+      if (!confirm(msg)) return;
+      await API.remove('guide_pages', p.id);
+      pages.splice(pages.findIndex(x => x.id === p.id), 1);
+      render();
+      toast('נמחק');
+    });
+  };
+
+  const openGuideRootModal = (page) => {
+    const isNew = !page;
+    const deviceOptions = `<option value="">ללא</option>` + devices.map(d =>
+      `<option value="${d.id}"${page?.linked_device_id === d.id ? ' selected' : ''}>${esc(d.name)}</option>`).join('');
+    showModal(`
+      <h3>${isNew ? 'מדריך חדש' : 'עריכת מדריך'}</h3>
+      <div class="form-grid">
+        <div class="form-field full"><label>כותרת *</label><input type="text" id="g-title" value="${esc(page?.title || '')}"></div>
+        <div class="form-field"><label>תווית כפתור (מוצג בדף הראשי)</label><input type="text" id="g-label" value="${esc(page?.button_label || '')}"></div>
+        <div class="form-field"><label>מכשיר מקושר</label><select id="g-device">${deviceOptions}</select></div>
+        <div class="form-field full"><label>תיאור</label><textarea id="g-desc">${esc(page?.description || '')}</textarea></div>
+        <div class="checkbox-field"><input type="checkbox" id="g-pub" ${!page || page.is_published ? 'checked' : ''}><label for="g-pub">מפורסם</label></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="modal-save">${isNew ? 'צור' : 'שמור'}</button>
+        <button class="btn" id="modal-cancel">ביטול</button>
+      </div>
+    `);
+    document.getElementById('modal-cancel').onclick = closeModal;
+    document.getElementById('modal-save').onclick = async () => {
+      const title = document.getElementById('g-title').value.trim();
+      if (!title) { toast('יש למלא כותרת'); return; }
+      const data = {
+        title,
+        button_label: document.getElementById('g-label').value.trim(),
+        linked_device_id: document.getElementById('g-device').value || null,
+        description: document.getElementById('g-desc').value.trim(),
+        is_published: document.getElementById('g-pub').checked ? 1 : 0,
+        parent_id: null,
+      };
+      try {
+        if (isNew) {
+          data.sort_order = pages.filter(p => !p.parent_id).length;
+          const created = await API.create('guide_pages', data);
+          pages.push(created);
+        } else {
+          const updated = await API.update('guide_pages', page.id, data);
+          pages[pages.findIndex(p => p.id === page.id)] = updated;
+        }
+        closeModal(); render(); toast('נשמר');
+      } catch (err) { toast(err.message); }
+    };
+  };
+
+  render();
 }
 
 // ===== Boot =====

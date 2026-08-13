@@ -99,6 +99,8 @@ img { max-width: 100%; }
 }
 .search-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 92, 184, 0.15); background: #fff; }
 
+.home-admin-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+
 /* ===== Device cards grid ===== */
 .devices-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
 @media (min-width: 640px) { .devices-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; } }
@@ -183,6 +185,8 @@ img { max-width: 100%; }
 .btn:hover { filter: brightness(0.96); }
 .btn-primary { background: var(--primary); color: #fff; }
 .btn-primary:hover { background: var(--primary-dark); filter: none; }
+.btn-teal { background: var(--secondary); color: #fff; }
+.btn-teal:hover { background: #17564f; filter: none; }
 .btn-outline { background: #fff; border-color: var(--border); }
 .btn-outline:hover { border-color: var(--primary); color: var(--primary); filter: none; }
 .btn-danger { background: rgba(225, 29, 72, 0.08); color: var(--destructive); }
