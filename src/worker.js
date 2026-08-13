@@ -5,6 +5,16 @@
 // Cloudflare Pages — Pages' automatic `functions/` directory routing does not apply here,
 // so all routing (API vs. static assets) happens explicitly in this single entry point.
 import { SEED } from './seed-data.js';
+import { HAMILTON_PM_BLOCKS, HAMILTON_PM_PAGES } from './hamilton-pm.js';
+
+// Consolidated Hamilton PM content is an additive overlay. The original
+// exported guide rows remain available, so regeneration never destroys data.
+const APP_SEED = {
+  ...SEED,
+  guide_pages: HAMILTON_PM_PAGES,
+  guide_blocks: [...SEED.guide_blocks, ...HAMILTON_PM_BLOCKS],
+};
+const HAMILTON_PM_VERSION = '2026-08-13-consolidated-v1';
 
 const TABLES = {
   devices: ['name', 'name_he', 'notes', 'category', 'tech_code', 'external_link', 'info_route', 'image', 'sort_order'],
@@ -63,6 +73,34 @@ async function ensureSetup(db) {
   }
   const seeded = await db.prepare("SELECT value FROM meta WHERE key = 'seeded'").first();
   if (!seeded || seeded.value !== '1') await seedAll(db);
+  const pmVersion = await db.prepare("SELECT value FROM meta WHERE key = 'hamilton_pm_version'").first();
+  if (!pmVersion || pmVersion.value !== HAMILTON_PM_VERSION) await syncHamiltonPm(db);
+}
+
+// Applies only the known Hamilton PM overlay rows. Existing source rows stay
+// in place, while the twelve PM pages are flattened into one page per system.
+async function syncHamiltonPm(db) {
+  const pageStatements = HAMILTON_PM_PAGES.map((page) => db.prepare(`
+    INSERT INTO guide_pages
+      (id, title, parent_id, sort_order, is_published, linked_device_id, button_label, button_color, description)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title=excluded.title, parent_id=excluded.parent_id, sort_order=excluded.sort_order,
+      is_published=excluded.is_published, linked_device_id=excluded.linked_device_id,
+      button_label=excluded.button_label, button_color=excluded.button_color, description=excluded.description
+  `).bind(page.id, page.title, page.parent_id ?? null, page.sort_order ?? 0, page.is_published ? 1 : 0,
+    page.linked_device_id ?? null, page.button_label ?? null, page.button_color ?? null, page.description ?? null));
+  await db.batch(pageStatements);
+
+  const blockStatements = HAMILTON_PM_BLOCKS.map((block) => db.prepare(`
+    INSERT OR IGNORE INTO guide_blocks
+      (id, page_id, block_title, text, image_url, image_width, image_rotation, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(block.id, block.page_id, block.block_title ?? null, block.text ?? null, block.image_url ?? null,
+    block.image_width ?? 220, block.image_rotation ?? 0, block.sort_order ?? 0));
+  await db.batch(blockStatements);
+  await db.prepare("INSERT INTO meta (key, value) VALUES ('hamilton_pm_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .bind(HAMILTON_PM_VERSION).run();
 }
 
 // Seeds every table, chunking inserts so a large table never fails as one D1 batch.
@@ -74,7 +112,7 @@ async function ensureSetup(db) {
 async function seedAll(db) {
   const CHUNK = 40;
   for (const [table, cols] of Object.entries(TABLES)) {
-    const rows = SEED[table] || [];
+    const rows = APP_SEED[table] || [];
     if (!rows.length) continue;
     const stmts = rows.map((row) => {
       const allCols = ['id', ...cols];
@@ -85,8 +123,8 @@ async function seedAll(db) {
       await db.batch(stmts.slice(i, i + CHUNK));
     }
   }
-  if (SEED.admins.length) {
-    await db.batch(SEED.admins.map(email =>
+  if (APP_SEED.admins.length) {
+    await db.batch(APP_SEED.admins.map(email =>
       db.prepare('INSERT OR IGNORE INTO admins (email) VALUES (?)').bind(email)));
   }
   await db.prepare("INSERT INTO meta (key, value) VALUES ('seeded', '1') ON CONFLICT(key) DO UPDATE SET value = '1'").run();

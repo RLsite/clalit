@@ -94,3 +94,17 @@ node scripts/make-seed.js
 ```
 
 הנתונים נטענים רק אם בסיס הנתונים ריק (מסומן ב-`meta.seeded`) — נתונים קיימים לא נדרסים.
+
+## Hamilton PM — consolidated manual
+
+The Hamilton MICROLAB® STAR PM manual is maintained as a safe additive overlay:
+
+```bash
+node scripts/import-hamilton-pm.js
+```
+
+This generates `src/hamilton-pm.js` from the consolidated source in the script. The
+original `scrape/GuidePage.json`, `scrape/GuideBlock.json`, and generated
+`src/seed-data.js` remain unchanged. On the next API initialization, the Worker
+applies the overlay once using `meta.hamilton_pm_version`: the Hamilton PM root
+keeps its `PM` button and exposes one page per system below it.
