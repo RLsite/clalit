@@ -1,0 +1,7 @@
+/devices/* /index.html 200
+/device-info/* /index.html 200
+/guide-viewer/* /index.html 200
+/pcr-info /index.html 200
+/bilimeter-info /index.html 200
+/rotor-gene-info /index.html 200
+/hamilton-info /index.html 200
