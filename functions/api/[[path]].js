@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS guide_blocks (id TEXT PRIMARY KEY, page_id TEXT, bloc
 CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, name TEXT, mime TEXT, data BLOB, created TEXT);
 CREATE TABLE IF NOT EXISTS admins (email TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS page_permissions (id TEXT PRIMARY KEY, page_id TEXT, email TEXT);
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 `;
 
 const genId = () => [...crypto.getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -56,24 +57,35 @@ async function ensureSetup(db) {
       await db.prepare(stmt).run();
     }
   }
-  const count = await db.prepare('SELECT COUNT(*) AS n FROM devices').first();
-  if (count && count.n === 0) await seedAll(db);
+  const seeded = await db.prepare("SELECT value FROM meta WHERE key = 'seeded'").first();
+  if (!seeded || seeded.value !== '1') await seedAll(db);
 }
 
+// Seeds every table, chunking inserts so a large table never fails as one D1 batch.
+// Only marks itself done in `meta` once every table succeeds — a failure partway
+// through (e.g. a transient D1 error) leaves the marker unset, so the next request
+// retries and finishes the job (INSERT OR IGNORE makes re-running safe). Once the
+// marker is set, seeding never touches the data tables again, so it won't
+// resurrect rows a user has since deleted through the app.
 async function seedAll(db) {
-  const stmts = [];
+  const CHUNK = 40;
   for (const [table, cols] of Object.entries(TABLES)) {
     const rows = SEED[table] || [];
-    for (const row of rows) {
+    if (!rows.length) continue;
+    const stmts = rows.map((row) => {
       const allCols = ['id', ...cols];
       const sql = `INSERT OR IGNORE INTO ${table} (${allCols.join(',')}) VALUES (${allCols.map(() => '?').join(',')})`;
-      stmts.push(db.prepare(sql).bind(...allCols.map(c => row[c] ?? null)));
+      return db.prepare(sql).bind(...allCols.map(c => row[c] ?? null));
+    });
+    for (let i = 0; i < stmts.length; i += CHUNK) {
+      await db.batch(stmts.slice(i, i + CHUNK));
     }
   }
-  for (const email of SEED.admins) {
-    stmts.push(db.prepare('INSERT OR IGNORE INTO admins (email) VALUES (?)').bind(email));
+  if (SEED.admins.length) {
+    await db.batch(SEED.admins.map(email =>
+      db.prepare('INSERT OR IGNORE INTO admins (email) VALUES (?)').bind(email)));
   }
-  if (stmts.length) await db.batch(stmts);
+  await db.prepare("INSERT INTO meta (key, value) VALUES ('seeded', '1') ON CONFLICT(key) DO UPDATE SET value = '1'").run();
 }
 
 function getEmail(request) {
