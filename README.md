@@ -14,7 +14,7 @@
 ## מבנה הפרויקט
 
 ```
-public/               האתר עצמו (HTML/CSS/JS — ללא build)
+index.html, css/, js/, images/    האתר עצמו (HTML/CSS/JS — ללא build), בתיקיית הרוט
 functions/api/        ה-API (Cloudflare Pages Functions מעל D1)
   [[path]].js         כל נקודות הקצה
   seed-data.js        כל הנתונים שהועתקו מהאתר המקורי (נטען אוטומטית בפעם הראשונה)
@@ -47,7 +47,7 @@ scrape/               הנתונים הגולמיים שנשאבו מ-base44 (ג
 3. בהגדרות ה-Build:
    - **Framework preset**: None
    - **Build command**: (להשאיר ריק)
-   - **Build output directory**: `public`
+   - **Build output directory**: `/` (שורש הריפו — להשאיר ריק או לרשום `/`)
 4. לחץ **Save and Deploy**
 
 ## שלב 4: חיבור בסיס הנתונים לאתר
@@ -96,7 +96,7 @@ scrape/               הנתונים הגולמיים שנשאבו מ-base44 (ג
 ## פיתוח מקומי
 
 ```bash
-npx wrangler pages dev public
+npx wrangler pages dev .
 ```
 
 נפתח על http://localhost:8788 עם D1 מקומי (נוצר ומאוכלס אוטומטית).
