@@ -129,7 +129,7 @@ img { max-width: 100%; }
 .parts-count { display: inline-flex; align-items: center; gap: 4px; color: var(--muted-foreground); font-size: 12px; font-weight: 500; }
 
 .info-btn {
-  position: absolute; top: 8px; left: 8px; z-index: 2;
+  position: absolute; top: 8px; right: 8px; z-index: 2;
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 11px; font-weight: 700; letter-spacing: .3px;
   color: var(--primary); background: rgba(255, 255, 255, 0.92);
@@ -294,14 +294,11 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; min-
 .next-step-btn:hover { transform: translateY(-1px); }
 .ql-direction-rtl { direction: rtl; text-align: right; }
 
-/* Home guide buttons */
-.home-guides { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
-.home-guide-btn {
-  display: inline-flex; align-items: center; gap: 8px; border-radius: 12px; padding: 10px 24px;
-  font-weight: 800; font-size: 14px; color: #fff; background: var(--primary);
-  box-shadow: 0 6px 16px -8px rgba(0, 92, 184, 0.5); transition: all .2s;
+/* Home guide tile — sits in the devices grid like a device card */
+.guide-card .img-wrap.guide-icon {
+  background: rgba(0, 92, 184, 0.08); color: var(--primary);
 }
-.home-guide-btn:hover { transform: translateY(-1px); background: var(--primary-dark); }
+.guide-card:hover .img-wrap.guide-icon { background: rgba(0, 92, 184, 0.14); }
 
 /* ===== Mobile bottom nav ===== */
 .bottom-nav {

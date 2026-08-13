@@ -27,6 +27,7 @@ const ICONS = {
   back: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
   link: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
   arrowLeft: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>',
+  guide: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
 };
 
 // ===== Global state =====
@@ -159,10 +160,24 @@ async function renderHome() {
       </a>
     </div>`;
 
-  const guideButtons = guidePages
+  const guideCard = (g) => `
+    <a class="device-card guide-card" href="/guide-viewer/${g.id}" data-link>
+      <div class="img-wrap guide-icon">${ICONS.guide}</div>
+      <div class="card-body">
+        <div>
+          <h3>${esc(g.button_label)}</h3>
+          <div class="card-sub">מדריך תחזוקה</div>
+        </div>
+        <div class="card-footer">
+          <div class="chips"><span class="chip chip-outline">מדריך</span></div>
+        </div>
+      </div>
+    </a>`;
+
+  const guideCards = guidePages
     .filter(g => !g.parent_id && g.button_label && g.is_published)
     .sort((a, b) => a.sort_order - b.sort_order)
-    .map(g => `<a class="home-guide-btn" href="/guide-viewer/${g.id}" data-link>${esc(g.button_label)}</a>`)
+    .map(guideCard)
     .join('');
 
   $app.innerHTML = `
@@ -176,8 +191,8 @@ async function renderHome() {
     <div class="devices-grid" id="devices-grid">
       ${pcrCard}
       ${devices.map(deviceCard).join('')}
+      ${guideCards}
     </div>
-    ${guideButtons ? `<div class="home-guides">${guideButtons}</div>` : ''}
   `;
 
   const grid = document.getElementById('devices-grid');
