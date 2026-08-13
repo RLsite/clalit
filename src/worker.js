@@ -142,13 +142,28 @@ async function seedAll(db) {
 }
 
 function getEmail(request) {
-  // Set by Cloudflare Access after login; absent in local dev
+  // Set by Cloudflare Access after login; absent in local dev and for any
+  // request that reaches this Worker without passing through Access.
   return request.headers.get('Cf-Access-Authenticated-User-Email') || null;
+}
+
+// True only when this Worker is genuinely running under `wrangler dev` (the
+// request's own Host header is localhost/127.0.0.1) — never for a deployed
+// Worker, even if Cloudflare Access isn't (yet, or no longer) intercepting it.
+// This is the one thing standing between "Access is misconfigured" and
+// "everyone on the internet gets admin", so it must not be guessable from
+// anything a client can send (headers, query params, etc.).
+function isLocalDev(request) {
+  const host = new URL(request.url).hostname;
+  return host === 'localhost' || host === '127.0.0.1';
 }
 
 async function getAuth(db, request) {
   const email = getEmail(request);
-  if (!email) return { email: 'dev@local', isAdmin: true, pages: ['*'] }; // Access not configured / local dev
+  if (!email) {
+    if (isLocalDev(request)) return { email: 'dev@local', isAdmin: true, pages: ['*'] };
+    return { email: null, isAdmin: false, pages: [] }; // unauthenticated — no admin/editor rights
+  }
   const admin = await db.prepare('SELECT 1 AS ok FROM admins WHERE email = ?').bind(email.toLowerCase()).first();
   if (admin) return { email, isAdmin: true, pages: ['*'] };
   const { results } = await db.prepare('SELECT page_id FROM page_permissions WHERE email = ?').bind(email.toLowerCase()).all();
