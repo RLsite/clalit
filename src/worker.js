@@ -77,8 +77,10 @@ async function ensureSetup(db) {
   if (!pmVersion || pmVersion.value !== HAMILTON_PM_VERSION) await syncHamiltonPm(db);
 }
 
-// Applies only the known Hamilton PM overlay rows. Existing source rows stay
-// in place, while the twelve PM pages are flattened into one page per system.
+// Applies the known Hamilton PM overlay rows: the same twelve guide pages get
+// updated in place, and each is left with exactly the one consolidated block —
+// any older, pre-consolidation blocks on those same pages (leftover scaffolding
+// from the base44 editor) are removed so the page isn't left showing both.
 async function syncHamiltonPm(db) {
   const pageStatements = HAMILTON_PM_PAGES.map((page) => db.prepare(`
     INSERT INTO guide_pages
@@ -99,6 +101,15 @@ async function syncHamiltonPm(db) {
   `).bind(block.id, block.page_id, block.block_title ?? null, block.text ?? null, block.image_url ?? null,
     block.image_width ?? 220, block.image_rotation ?? 0, block.sort_order ?? 0));
   await db.batch(blockStatements);
+
+  const pageIds = HAMILTON_PM_PAGES.map((p) => p.id);
+  const keepBlockIds = HAMILTON_PM_BLOCKS.map((b) => b.id);
+  const pagePlaceholders = pageIds.map(() => '?').join(',');
+  const keepPlaceholders = keepBlockIds.map(() => '?').join(',');
+  await db.prepare(
+    `DELETE FROM guide_blocks WHERE page_id IN (${pagePlaceholders}) AND id NOT IN (${keepPlaceholders})`
+  ).bind(...pageIds, ...keepBlockIds).run();
+
   await db.prepare("INSERT INTO meta (key, value) VALUES ('hamilton_pm_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
     .bind(HAMILTON_PM_VERSION).run();
 }
