@@ -14,7 +14,7 @@ const APP_SEED = {
   guide_pages: HAMILTON_PM_PAGES,
   guide_blocks: [...SEED.guide_blocks, ...HAMILTON_PM_BLOCKS],
 };
-const HAMILTON_PM_VERSION = '2026-08-13-consolidated-v1';
+const HAMILTON_PM_VERSION = '2026-08-13-consolidated-v2';
 
 const TABLES = {
   devices: ['name', 'name_he', 'notes', 'category', 'tech_code', 'external_link', 'info_route', 'image', 'sort_order'],
